@@ -1,24 +1,67 @@
-from flask import Flask, render_template, request
-import pickle
+import streamlit as st
+import joblib
+import numpy as np
+import os
 
-app = Flask(__name__)
+# Set page configuration
+st.set_page_config(page_title="Breast Cancer Predictor", layout="centered")
 
-with open("model.h5", "rb") as f:
-    # Grab the model and scaler, and ignore anything else in the file
-    data = pickle.load(f)
-    model = data[0]
-    scaler = data[1]
-    
+st.title("Project 5: Breast Cancer Prediction System")
+st.write("Enter the tumor features below to predict if it is Benign or Malignant.")
 
-@app.route("/", methods=["GET", "POST"])
-def home():
-    prediction = None
-    if request.method == "POST":
-        features = [float(x) for x in request.form.values()]
-        features = scaler.transform([features])
-        prediction = model.predict(features)[0]
-    return render_template("index.html", prediction=prediction)
+# 1. Load the Model with Error Handling (Feedback requirement)
+model_path = 'model/breast_cancer_model.pkl'
 
-app.run(debug=True)
-port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port)
+@st.cache_resource # Caches the model to avoid reloading on every interaction
+def load_model():
+    try:
+        return joblib.load(model_path)
+    except FileNotFoundError:
+        st.error(f"Model file not found at {model_path}. Please check directory structure.")
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while loading the model: {e}")
+        return None
+
+model = load_model()
+
+# 2. Input Fields for the 5 Selected Features
+# Using columns for a better layout
+col1, col2 = st.columns(2)
+
+with col1:
+    radius_mean = st.number_input("Radius Mean", min_value=0.0, format="%.4f")
+    perimeter_mean = st.number_input("Perimeter Mean", min_value=0.0, format="%.4f")
+    area_mean = st.number_input("Area Mean", min_value=0.0, format="%.4f")
+
+with col2:
+    compactness_mean = st.number_input("Compactness Mean", min_value=0.0, format="%.4f")
+    concavity_mean = st.number_input("Concavity Mean", min_value=0.0, format="%.4f")
+
+# 3. Prediction Logic
+if st.button("Predict Diagnosis"):
+    if model is not None:
+        try:
+            # Create numpy array for prediction
+            input_data = np.array([[radius_mean, perimeter_mean, area_mean, compactness_mean, concavity_mean]])
+            
+            # Predict (The pipeline handles the scaling automatically!)
+            prediction = model.predict(input_data)
+            prediction_proba = model.predict_proba(input_data)
+
+            # Display Result
+            if prediction[0] == 1:
+                st.error(f"Prediction: **Malignant** (Probability: {prediction_proba[0][1]:.2f})")
+                st.write("The model suggests the tumor may be cancerous.")
+            else:
+                st.success(f"Prediction: **Benign** (Probability: {prediction_proba[0][0]:.2f})")
+                st.write("The model suggests the tumor is likely non-cancerous.")
+        
+        except Exception as e:
+            st.error(f"Error during prediction: {e}")
+    else:
+        st.warning("Model is not loaded. Cannot predict.")
+
+# Footer info
+st.markdown("---")
+st.caption("Educational purposes only. Do not use for medical diagnosis.")
